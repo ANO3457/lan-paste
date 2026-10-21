@@ -1,0 +1,25 @@
+services:
+  lan-paste:
+    build: .
+    container_name: lan-paste
+    restart: unless-stopped
+    ports:
+      # Bind on all host interfaces for LAN access. Restrict this port with your host firewall.
+      - "8000:8000"
+    environment:
+      DATA_DIR: /data
+      DEFAULT_TTL_HOURS: "24"
+      # Required for DELETE API requests. Set it in the untracked .env file.
+      PASTE_ADMIN_TOKEN: ${PASTE_ADMIN_TOKEN:?Set PASTE_ADMIN_TOKEN in .env}
+    volumes:
+      - paste_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  paste_data:

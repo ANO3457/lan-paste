@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LAN Paste</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header><div><p class="eyebrow">PRIVATE NETWORK UTILITY</p><h1>LAN Paste</h1><p class="muted">Move text between your devices. Fast, simple, local.</p></div><span class="pill">Self-hosted</span></header>
+    <section class="panel">
+      <h2>New paste</h2>
+      <form id="paste-form">
+        <label for="title">Title <span class="muted">(optional)</span></label>
+        <input id="title" name="title" maxlength="120" placeholder="e.g. server logs">
+        <label for="content">Content</label>
+        <textarea id="content" name="content" required spellcheck="false" placeholder="Paste text, code, commands, or logs here..."></textarea>
+        <div class="form-row"><div><label for="ttl">Expires</label><select id="ttl"><option value="1">In 1 hour</option><option value="24" selected>In 24 hours</option><option value="168">In 7 days</option><option value="never">Never (manual deletion)</option></select></div><button type="submit">Save paste</button></div>
+        <p id="status" class="status" role="status"></p>
+      </form>
+    </section>
+    <section class="panel"><div class="section-head"><h2>Recent pastes</h2><span class="muted">Latest 50</span></div>
+      {% if pastes %}<div class="paste-list">{% for paste in pastes %}<a class="paste-item" href="{{ url_for('view_paste', paste_id=paste['id']) }}"><span class="paste-title">{{ paste['title'] or 'Untitled paste' }}</span><code>{{ paste['preview'] }}</code><small>{{ paste['created_at'] }} UTC · {{ paste['id'] }}</small></a>{% endfor %}</div>{% else %}<p class="muted">No pastes yet. Create your first one above.</p>{% endif %}
+    </section>
+    <footer>Maximum paste size: 1 MiB. Treat this as a trusted-network tool, not a public secret vault.</footer>
+  </main>
+  <script>
+    const form = document.querySelector('#paste-form');
+    const status = document.querySelector('#status');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Saving…';
+      try {
+        const response = await fetch('/api/pastes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title: document.querySelector('#title').value, content: document.querySelector('#content').value, ttl_hours: document.querySelector('#ttl').value}) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not save paste');
+        window.location.href = result.url;
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    });
+  </script>
+</body>
+</html>

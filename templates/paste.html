@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ paste['title'] or 'Paste' }} · LAN Paste</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><main class="wrap">
+  <header><div><p class="eyebrow">LAN PASTE</p><h1>{{ paste['title'] or 'Untitled paste' }}</h1><p class="muted">Created {{ paste['created_at'] }} UTC</p></div><a class="button secondary" href="{{ url_for('index') }}">New paste</a></header>
+  <section class="panel"><div class="section-head"><div><h2>Content</h2><p class="muted">Paste ID: <code>{{ paste['id'] }}</code></p></div><button id="copy">Copy content</button></div><pre id="paste-content">{{ paste['content'] }}</pre><p id="copy-status" class="status" role="status"></p></section>
+  <footer>{% if paste['expires_at'] %}Expires {{ paste['expires_at'] }} UTC{% else %}Does not expire automatically{% endif %} · <a href="{{ url_for('index') }}">Back to recent pastes</a></footer>
+</main><script>
+document.querySelector('#copy').addEventListener('click', async () => { const status = document.querySelector('#copy-status'); try { await navigator.clipboard.writeText(document.querySelector('#paste-content').textContent); status.textContent = 'Copied.'; } catch (_) { status.textContent = 'Clipboard access failed; select and copy the text manually.'; } });
+</script></body></html>

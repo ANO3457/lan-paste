@@ -20,9 +20,11 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Startup needs only CHOWN to prepare the named volume, then su drops to appuser.
+    # Startup chowns the volume, then su switches to the unprivileged appuser.
     cap_add:
       - CHOWN
+      - SETUID
+      - SETGID
 
 volumes:
   paste_data:

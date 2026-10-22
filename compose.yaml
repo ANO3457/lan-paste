@@ -20,6 +20,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # Startup needs only CHOWN to prepare the named volume, then su drops to appuser.
+    cap_add:
+      - CHOWN
 
 volumes:
   paste_data:

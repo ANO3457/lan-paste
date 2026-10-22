@@ -60,6 +60,22 @@ Set expiry using `X-Paste-TTL: 1`, `24`, `168`, or `never`. Omit it to use `DEFA
 
 JSON clients can send `{"title":"note","content":"hello","ttl_hours":24}` with `Content-Type: application/json`.
 
+JSON bodies must be objects. `content` must be a non-empty string (not just
+whitespace), and `title`, when supplied, must be a string. Explicit `null`,
+numbers, arrays, and objects are not accepted for either field. For JSON, `ttl_hours`
+accepts integers `1`, `24`, `168`, their string forms, or `"never"`. Omitting it,
+using `null`, `""`, or `"default"` uses `DEFAULT_TTL_HOURS`. Boolean and fractional
+values are rejected. Raw-body clients keep using the title and TTL headers above.
+
+API errors return JSON with one non-empty `error` message, for example
+`{"error":"JSON body must be an object"}`. Invalid JSON, invalid fields or TTL,
+empty content, and paste content over 1 MiB return `400`. Requests exceeding the
+request-body limit (1 MiB plus 8 KiB of allowance for JSON) return `413`. Missing
+pastes return `404`, unsupported methods return `405` with an `Allow` header,
+and unexpected internal failures return a generic `500` without internal details.
+Browser pages retain human-readable error responses. Successful creation still
+returns `201` with the paste ID, URL, and expiry.
+
 List recent pastes:
 
 ```sh

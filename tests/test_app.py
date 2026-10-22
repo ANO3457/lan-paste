@@ -1,5 +1,8 @@
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
+
+import pytest
 from pathlib import Path
 
 # Give the imported app an isolated SQLite database for this test run.
@@ -59,3 +62,56 @@ def test_delete_requires_valid_admin_token():
     )
     assert deleted.status_code == 204
     assert client.get(f"/api/pastes/{paste_id}").status_code == 404
+
+
+@pytest.mark.parametrize("route", ["/api/pastes/", "/p/"])
+def test_missing_paste_is_not_found(route):
+    response = paste_app.app.test_client().get(f"{route}nonexistent-paste")
+    assert response.status_code == 404
+    if route.startswith("/api/"):
+        assert response.is_json
+        assert response.get_json() == {"error": "Paste not found"}
+    else:
+        assert response.get_data(as_text=True) == "Paste not found"
+
+
+@pytest.mark.parametrize("route", ["/api/pastes/", "/p/"])
+def test_expired_paste_is_removed_and_not_returned(route, monkeypatch):
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(paste_app, "now_utc", lambda: now)
+    with paste_app.connect() as db:
+        db.execute(
+            "INSERT INTO pastes (id, title, content, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            ("expired", "expired-title-marker", "expired-content-marker",
+             paste_app.stamp(now - timedelta(hours=2)),
+             paste_app.stamp(now - timedelta(hours=1))),
+        )
+        assert db.execute("SELECT id FROM pastes WHERE id = 'expired'").fetchone() is not None
+
+    response = paste_app.app.test_client().get(f"{route}expired")
+    assert response.status_code == 404
+    assert "expired-title-marker" not in response.get_data(as_text=True)
+    assert "expired-content-marker" not in response.get_data(as_text=True)
+    if route.startswith("/api/"):
+        assert response.is_json
+        assert response.get_json() == {"error": "Paste not found"}
+    else:
+        assert response.get_data(as_text=True) == "Paste not found"
+    with paste_app.connect() as db:
+        assert db.execute("SELECT id FROM pastes WHERE id = 'expired'").fetchone() is None
+
+
+@pytest.mark.parametrize("route", ["/api/pastes/", "/p/"])
+@pytest.mark.parametrize("ttl_hours", [1, None], ids=["future-expiry", "no-expiry"])
+def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(paste_app, "now_utc", lambda: now)
+    paste_id = paste_app.create_paste("still-readable-marker", "live note", ttl_hours)
+    response = paste_app.app.test_client().get(f"{route}{paste_id}")
+    assert response.status_code == 200
+    if route.startswith("/api/"):
+        assert response.get_json()["content"] == "still-readable-marker"
+    else:
+        assert "still-readable-marker" in response.get_data(as_text=True)
+    with paste_app.connect() as db:
+        assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None

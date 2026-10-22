@@ -1,7 +1,10 @@
 .env
 *.db
 *.db-shm
+temp_auto_push.bat
 *.db-wal
 __pycache__/
 *.py[cod]
 .venv/
+.gitignore
+branch_structure.json

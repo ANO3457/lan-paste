@@ -1,10 +1,53 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ paste['title'] or 'Paste' }} · LAN Paste</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
-<body><main class="wrap">
-  <header><div><p class="eyebrow">LAN PASTE</p><h1>{{ paste['title'] or 'Untitled paste' }}</h1><p class="muted">Created {{ paste['created_at'] }} UTC</p></div><a class="button secondary" href="{{ url_for('index') }}">New paste</a></header>
-  <section class="panel"><div class="section-head"><div><h2>Content</h2><p class="muted">Paste ID: <code>{{ paste['id'] }}</code></p></div><button id="copy">Copy content</button></div><pre id="paste-content">{{ paste['content'] }}</pre><p id="copy-status" class="status" role="status"></p></section>
-  <footer>{% if paste['expires_at'] %}Expires {{ paste['expires_at'] }} UTC{% else %}Does not expire automatically{% endif %} · <a href="{{ url_for('index') }}">Back to recent pastes</a></footer>
-</main><script>
-document.querySelector('#copy').addEventListener('click', async () => { const status = document.querySelector('#copy-status'); try { await navigator.clipboard.writeText(document.querySelector('#paste-content').textContent); status.textContent = 'Copied.'; } catch (_) { status.textContent = 'Clipboard access failed; select and copy the text manually.'; } });
-</script></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>{{ paste['title'] or 'Untitled paste' }} · LAN Paste</title>
+  <script>
+    try {
+      const savedTheme = localStorage.getItem('lan-paste-theme');
+      const theme = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    } catch (_) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="brand">
+        <div class="brand-row"><span class="brand-mark" aria-hidden="true">LP</span><p class="eyebrow">LAN Paste · Saved snippet</p></div>
+        <h1>{{ paste['title'] or 'Untitled paste' }}</h1>
+        <p class="subtitle">Created {{ paste['created_at'] }} UTC</p>
+      </div>
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme" title="Switch theme"><span class="theme-icon" aria-hidden="true">◐</span><span data-theme-label>Theme</span></button>
+        <a class="button secondary" href="{{ url_for('index') }}">+ New paste</a>
+      </div>
+    </header>
+    <section class="panel">
+      <div class="section-head">
+        <div><h2>Paste content</h2><p class="muted paste-meta">Paste ID: <code>{{ paste['id'] }}</code></p></div>
+        <button id="copy" type="button">Copy content</button>
+      </div>
+      <pre id="paste-content">{{ paste['content'] }}</pre>
+      <p id="copy-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+    <footer>{% if paste['expires_at'] %}Expires {{ paste['expires_at'] }} UTC{% else %}Does not expire automatically{% endif %} · <a href="{{ url_for('index') }}">Back to recent pastes</a></footer>
+  </main>
+  <script src="{{ url_for('static', filename='theme.js') }}" defer></script>
+  <script>
+    document.querySelector('#copy').addEventListener('click', async () => {
+      const status = document.querySelector('#copy-status');
+      try {
+        await navigator.clipboard.writeText(document.querySelector('#paste-content').textContent);
+        status.textContent = 'Copied to clipboard.';
+      } catch (_) {
+        status.textContent = 'Clipboard access failed; select and copy the text manually.';
+      }
+    });
+  </script>
+</body>
+</html>

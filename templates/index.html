@@ -1,41 +1,91 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LAN Paste</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>LAN Paste — Share text across your devices</title>
+  <script>
+    try {
+      const savedTheme = localStorage.getItem('lan-paste-theme');
+      const theme = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    } catch (_) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <main class="wrap">
-    <header><div><p class="eyebrow">PRIVATE NETWORK UTILITY</p><h1>LAN Paste</h1><p class="muted">Move text between your devices. Fast, simple, local.</p></div><span class="pill">Self-hosted</span></header>
+    <header>
+      <div class="brand">
+        <div class="brand-row"><span class="brand-mark" aria-hidden="true">LP</span><p class="eyebrow">Private network utility</p></div>
+        <h1>LAN Paste</h1>
+        <p class="subtitle">Move text between your devices. Fast, simple, local.</p>
+      </div>
+      <div class="header-actions">
+        <span class="pill">Self-hosted</span>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme" title="Switch theme"><span class="theme-icon" aria-hidden="true">◐</span><span data-theme-label>Theme</span></button>
+      </div>
+    </header>
     <section class="panel">
-      <h2>New paste</h2>
+      <div class="panel-heading"><h2>Create a paste</h2><p>Drop in a command, snippet, log, or any text you need on another device.</p></div>
       <form id="paste-form">
         <label for="title">Title <span class="muted">(optional)</span></label>
-        <input id="title" name="title" maxlength="120" placeholder="e.g. server logs">
+        <input id="title" name="title" maxlength="120" autocomplete="off" placeholder="e.g. server logs">
         <label for="content">Content</label>
-        <textarea id="content" name="content" required spellcheck="false" placeholder="Paste text, code, commands, or logs here..."></textarea>
-        <div class="form-row"><div><label for="ttl">Expires</label><select id="ttl"><option value="1">In 1 hour</option><option value="24" selected>In 24 hours</option><option value="168">In 7 days</option><option value="never">Never (manual deletion)</option></select></div><button type="submit">Save paste</button></div>
-        <p id="status" class="status" role="status"></p>
+        <textarea id="content" name="content" required spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste text, code, commands, or logs here…"></textarea>
+        <div class="form-row">
+          <div><label for="ttl">Expiration</label><select id="ttl"><option value="1">1 hour</option><option value="24" selected>24 hours</option><option value="168">7 days</option><option value="never">Never (manual deletion)</option></select></div>
+          <button type="submit">Save paste <span aria-hidden="true">↗</span></button>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
       </form>
     </section>
-    <section class="panel"><div class="section-head"><h2>Recent pastes</h2><span class="muted">Latest 50</span></div>
-      {% if pastes %}<div class="paste-list">{% for paste in pastes %}<a class="paste-item" href="{{ url_for('view_paste', paste_id=paste['id']) }}"><span class="paste-title">{{ paste['title'] or 'Untitled paste' }}</span><code>{{ paste['preview'] }}</code><small>{{ paste['created_at'] }} UTC · {{ paste['id'] }}</small></a>{% endfor %}</div>{% else %}<p class="muted">No pastes yet. Create your first one above.</p>{% endif %}
+    <section class="panel">
+      <div class="section-head"><div><h2>Recent pastes</h2><p class="muted">Your latest saved snippets</p></div><span class="muted">Latest 50</span></div>
+      {% if pastes %}
+      <div class="paste-list">
+        {% for paste in pastes %}
+        <a class="paste-item" href="{{ url_for('view_paste', paste_id=paste['id']) }}">
+          <span class="paste-title">{{ paste['title'] or 'Untitled paste' }}</span>
+          <code>{{ paste['preview'] }}</code>
+          <small>{{ paste['created_at'] }} UTC · {{ paste['id'] }}</small>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted">Nothing saved yet. Create your first paste above.</p>
+      {% endif %}
     </section>
-    <footer>Maximum paste size: 1 MiB. Treat this as a trusted-network tool, not a public secret vault.</footer>
+    <footer>Maximum paste size: 1 MiB. Built for trusted networks; don’t use it as a public secret vault.</footer>
   </main>
+  <script src="{{ url_for('static', filename='theme.js') }}" defer></script>
   <script>
     const form = document.querySelector('#paste-form');
     const status = document.querySelector('#status');
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Saving…';
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      status.textContent = 'Saving paste…';
       try {
-        const response = await fetch('/api/pastes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({title: document.querySelector('#title').value, content: document.querySelector('#content').value, ttl_hours: document.querySelector('#ttl').value}) });
+        const response = await fetch('/api/pastes', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            title: document.querySelector('#title').value,
+            content: document.querySelector('#content').value,
+            ttl_hours: document.querySelector('#ttl').value
+          })
+        });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Could not save paste');
         window.location.href = result.url;
-      } catch (error) { status.textContent = error.message; }
-      finally { button.disabled = false; }
+      } catch (error) {
+        status.textContent = error.message || 'Could not save paste. Try again.';
+      } finally {
+        button.disabled = false;
+      }
     });
   </script>
 </body>

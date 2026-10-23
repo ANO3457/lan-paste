@@ -18,6 +18,7 @@ openssl rand -hex 32
 ```
 
 Compose refuses to start until `PASTE_ADMIN_TOKEN` is set. `.env` is ignored by Git; never commit or share it.
+Optionally set `DEFAULT_TTL_HOURS` to `1`, `24` (default), or `168`. Invalid or unsupported values fail startup with a clear error.
 
 ## 2. Build and run
 

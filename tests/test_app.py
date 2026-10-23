@@ -277,3 +277,25 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+@pytest.mark.parametrize("env_val,expected", [
+    ("24", 24),
+    ("1", 1),
+    ("168", 168),
+    (None, 24),
+])
+def test_load_default_ttl_valid(env_val, expected, monkeypatch):
+    if env_val is None:
+        monkeypatch.delenv("DEFAULT_TTL_HOURS", raising=False)
+        assert paste_app.load_default_ttl() == expected
+    else:
+        monkeypatch.setenv("DEFAULT_TTL_HOURS", env_val)
+        assert paste_app.load_default_ttl() == expected
+
+
+@pytest.mark.parametrize("invalid_val", ["0", "-1", "48", "999", "never", "invalid", "24.5"])
+def test_load_default_ttl_invalid_raises_value_error(invalid_val, monkeypatch):
+    monkeypatch.setenv("DEFAULT_TTL_HOURS", invalid_val)
+    with pytest.raises(ValueError, match="Invalid DEFAULT_TTL_HOURS"):
+        paste_app.load_default_ttl()

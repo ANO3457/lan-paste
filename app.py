@@ -10,7 +10,26 @@ from werkzeug.exceptions import BadRequest, HTTPException
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "pastes.db"
 MAX_PASTE_BYTES = 1024 * 1024  # 1 MiB
-DEFAULT_TTL_HOURS = int(os.environ.get("DEFAULT_TTL_HOURS", "24"))
+SUPPORTED_TTL_HOURS = (1, 24, 168)
+
+
+def load_default_ttl(env_val=None):
+    if env_val is None:
+        env_val = os.environ.get("DEFAULT_TTL_HOURS", "24")
+    try:
+        val = int(env_val)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid DEFAULT_TTL_HOURS: {env_val!r}. Supported values are: {', '.join(map(str, SUPPORTED_TTL_HOURS))}"
+        ) from None
+    if val not in SUPPORTED_TTL_HOURS:
+        raise ValueError(
+            f"Invalid DEFAULT_TTL_HOURS: {val}. Supported values are: {', '.join(map(str, SUPPORTED_TTL_HOURS))}"
+        )
+    return val
+
+
+DEFAULT_TTL_HOURS = load_default_ttl()
 ADMIN_TOKEN = os.environ.get("PASTE_ADMIN_TOKEN", "")
 
 app = Flask(__name__)
@@ -73,7 +92,7 @@ def parse_ttl(value):
         hours = int(value)
     except (TypeError, ValueError):
         raise PasteValidationError("ttl_hours must be 1, 24, 168, or 'never'") from None
-    if hours not in (1, 24, 168):
+    if hours not in SUPPORTED_TTL_HOURS:
         raise PasteValidationError("ttl_hours must be 1, 24, 168, or 'never'")
     return hours
 

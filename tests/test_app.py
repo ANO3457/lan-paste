@@ -277,3 +277,24 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+def test_health_endpoint_success():
+    client = paste_app.app.test_client()
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.is_json
+    assert response.get_json() == {"status": "ok", "database": "ok"}
+
+
+def test_health_endpoint_database_failure(monkeypatch):
+    def failing_connect():
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(paste_app, "connect", failing_connect)
+    client = paste_app.app.test_client()
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.is_json
+    assert response.get_json() == {"status": "error", "database": "unreachable"}
+    assert "disk I/O error" not in response.get_data(as_text=True)

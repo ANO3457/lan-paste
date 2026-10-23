@@ -95,6 +95,17 @@ curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
   -H 'X-Admin-Token: YOUR_ADMIN_TOKEN'
 ```
 
+## Health check
+
+A lightweight endpoint is provided for container healthchecks and uptime probes:
+
+```sh
+curl -fsS http://HOST-LAN-IP:8000/health
+```
+
+- Returns HTTP `200` with `{"status": "ok", "database": "ok"}` when the application and database are operational.
+- Returns HTTP `503` with `{"status": "error", "database": "unreachable"}` if the database check fails, without leaking sensitive paths or errors.
+
 ## Maintenance
 
 ```sh

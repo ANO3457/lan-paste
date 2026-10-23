@@ -176,6 +176,16 @@ def api_delete(paste_id):
     return "", 204
 
 
+@app.get("/health")
+def health():
+    try:
+        with connect() as db:
+            db.execute("SELECT 1").fetchone()
+    except Exception:
+        return jsonify(status="error", database="unreachable"), 503
+    return jsonify(status="ok", database="ok")
+
+
 @app.errorhandler(404)
 def not_found(_error):
     if request.path.startswith("/api/"):

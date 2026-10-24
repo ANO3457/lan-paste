@@ -9,6 +9,7 @@ services:
     environment:
       DATA_DIR: /data
       DEFAULT_TTL_HOURS: "24"
+      MAX_PASTE_BYTES: ${MAX_PASTE_BYTES-1048576}
       # Required for DELETE API requests. Set it in the untracked .env file.
       PASTE_ADMIN_TOKEN: ${PASTE_ADMIN_TOKEN:?Set PASTE_ADMIN_TOKEN in .env}
     volumes:

@@ -9,7 +9,18 @@ from werkzeug.exceptions import BadRequest, HTTPException
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "pastes.db"
-MAX_PASTE_BYTES = 1024 * 1024  # 1 MiB
+def load_max_paste_bytes():
+    """Read the content limit once, before accepting requests."""
+    try:
+        value = int(os.environ.get("MAX_PASTE_BYTES", "1048576"))
+    except ValueError:
+        raise ValueError("MAX_PASTE_BYTES must be a positive integer (bytes)") from None
+    if value <= 0:
+        raise ValueError("MAX_PASTE_BYTES must be a positive integer (bytes)")
+    return value
+
+
+MAX_PASTE_BYTES = load_max_paste_bytes()
 DEFAULT_TTL_HOURS = int(os.environ.get("DEFAULT_TTL_HOURS", "24"))
 ADMIN_TOKEN = os.environ.get("PASTE_ADMIN_TOKEN", "")
 
@@ -89,7 +100,7 @@ def create_paste(content, title="", ttl_hours=None):
     except UnicodeEncodeError:
         raise PasteValidationError("content and title must be valid UTF-8") from None
     if len(encoded_content) > MAX_PASTE_BYTES:
-        raise PasteValidationError("Paste is too large; maximum is 1 MiB")
+        raise PasteValidationError(f"Paste is too large; maximum is {MAX_PASTE_BYTES} bytes")
     created = now_utc()
     expires = created + timedelta(hours=ttl_hours) if ttl_hours is not None else None
     paste_id = secrets.token_urlsafe(9)
@@ -187,7 +198,7 @@ def not_found(_error):
 def too_large(_error):
     if not request.path.startswith("/api/"):
         return _error
-    return jsonify(error="Request too large; maximum paste size is 1 MiB"), 413
+    return jsonify(error=f"Request too large; maximum paste size is {MAX_PASTE_BYTES} bytes"), 413
 
 
 @app.errorhandler(HTTPException)

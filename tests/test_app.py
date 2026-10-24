@@ -1,5 +1,8 @@
 import os
 import tempfile
+import json
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,6 +15,55 @@ os.environ["PASTE_ADMIN_TOKEN"] = "test-admin-token"
 os.environ["DEFAULT_TTL_HOURS"] = "24"
 
 import app as paste_app  # noqa: E402
+
+
+@pytest.mark.parametrize("value,expected", [(None, 1048576), ("4096", 4096), ("2097152", 2097152)])
+def test_paste_size_setting_is_applied_at_startup(tmp_path, value, expected):
+    env = {**os.environ, "DATA_DIR": str(tmp_path)}
+    env.pop("MAX_PASTE_BYTES", None)
+    if value is not None:
+        env["MAX_PASTE_BYTES"] = value
+    result = subprocess.run(
+        [sys.executable, "-c", "import app,json; print(json.dumps([app.MAX_PASTE_BYTES, app.app.config['MAX_CONTENT_LENGTH']]))"],
+        env=env, capture_output=True, text=True, check=True,
+    )
+    assert json.loads(result.stdout) == [expected, expected + 8192]
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "many", "true"])
+def test_invalid_paste_size_fails_startup(tmp_path, value):
+    result = subprocess.run(
+        [sys.executable, "-c", "import app"],
+        env={**os.environ, "DATA_DIR": str(tmp_path), "MAX_PASTE_BYTES": value},
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "MAX_PASTE_BYTES must be a positive integer" in result.stderr
+
+
+@pytest.mark.parametrize("mode", ["raw", "json"])
+@pytest.mark.parametrize("extra,status", [(0, 201), (1, 400)])
+def test_custom_limit_counts_utf8_bytes(monkeypatch, mode, extra, status):
+    monkeypatch.setattr(paste_app, "MAX_PASTE_BYTES", 16)
+    monkeypatch.setitem(paste_app.app.config, "MAX_CONTENT_LENGTH", 16 + 8192)
+    content = "é" * 8 + "x" * extra
+    kwargs = {"json": {"content": content}} if mode == "json" else {
+        "data": content.encode("utf-8"), "content_type": "text/plain",
+    }
+    response = paste_app.app.test_client().post("/api/pastes", **kwargs)
+    assert response.status_code == status
+    if status == 400:
+        assert "16 bytes" in assert_api_error(response, 400)
+    else:
+        fetched = paste_app.app.test_client().get("/api/pastes/" + response.get_json()["id"])
+        assert fetched.get_json()["content"] == content
+
+
+def test_custom_request_limit_returns_413_with_configured_size(monkeypatch):
+    monkeypatch.setattr(paste_app, "MAX_PASTE_BYTES", 16)
+    monkeypatch.setitem(paste_app.app.config, "MAX_CONTENT_LENGTH", 16 + 8192)
+    response = paste_app.app.test_client().post("/api/pastes", data=b"x" * (16 + 8193))
+    assert "16 bytes" in assert_api_error(response, 413)
 
 
 def setup_function():

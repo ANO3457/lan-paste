@@ -19,6 +19,18 @@ openssl rand -hex 32
 
 Compose refuses to start until `PASTE_ADMIN_TOKEN` is set. `.env` is ignored by Git; never commit or share it.
 
+`MAX_PASTE_BYTES` optionally sets the maximum UTF-8 content size in bytes;
+it defaults to `1048576` (1 MiB). Set a positive integer, for example `2097152`
+for 2 MiB, in `.env` before starting Compose. Empty, non-integer, zero and
+negative values fail at startup. Increasing it increases per-request memory
+and disk use; keep the service on a trusted network.
+
+The HTTP body limit is the content limit plus 8192 bytes for JSON metadata
+and escaping. Content is checked separately in UTF-8 bytes for both JSON and
+raw requests. An unusually escape-heavy JSON body may reach the HTTP limit
+first; send UTF-8 directly or use the raw-body API in that case. Recreate the
+container after changing the setting (`docker compose up -d --force-recreate`).
+
 ## 2. Build and run
 
 ```sh
@@ -69,8 +81,8 @@ values are rejected. Raw-body clients keep using the title and TTL headers above
 
 API errors return JSON with one non-empty `error` message, for example
 `{"error":"JSON body must be an object"}`. Invalid JSON, invalid fields or TTL,
-empty content, and paste content over 1 MiB return `400`. Requests exceeding the
-request-body limit (1 MiB plus 8 KiB of allowance for JSON) return `413`. Missing
+empty content, and paste content over `MAX_PASTE_BYTES` return `400`. Requests exceeding the
+request-body limit (`MAX_PASTE_BYTES` plus 8 KiB of allowance for JSON) return `413`. Missing
 pastes return `404`, unsupported methods return `405` with an `Allow` header,
 and unexpected internal failures return a generic `500` without internal details.
 Browser pages retain human-readable error responses. Successful creation still
@@ -113,5 +125,5 @@ Back up the SQLite database by stopping the service briefly, copying the named v
 - `0.0.0.0:8000` in Compose publishes on host interfaces; enforce firewall rules for LAN and Tailscale access.
 - The admin token is required from `.env`; anyone with it can delete pastes.
 - Paste contents are not encrypted in SQLite. Anyone with host or Docker-volume access can read them.
-- The app limits paste size to 1 MiB and escapes content in HTML templates.
+- The app limits paste size to `MAX_PASTE_BYTES` (1 MiB by default) and escapes content in HTML templates.
 - This MVP does not provide per-user authentication. Anyone who can reach it can create and read pastes. Restrict network access accordingly.

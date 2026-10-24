@@ -70,7 +70,9 @@ values are rejected. Raw-body clients keep using the title and TTL headers above
 API errors return JSON with one non-empty `error` message, for example
 `{"error":"JSON body must be an object"}`. Invalid JSON, invalid fields or TTL,
 empty content, and paste content over 1 MiB return `400`. Requests exceeding the
-request-body limit (1 MiB plus 8 KiB of allowance for JSON) return `413`. Missing
+request-body limit (1 MiB plus 8 KiB of allowance for JSON) return `413`. When
+`PASTE_RATE_LIMIT` is set (requests per minute per client IP, default 0/disabled),
+rate-limited creation requests return `429` with a `Retry-After` header. Missing
 pastes return `404`, unsupported methods return `405` with an `Allow` header,
 and unexpected internal failures return a generic `500` without internal details.
 Browser pages retain human-readable error responses. Successful creation still
@@ -114,4 +116,5 @@ Back up the SQLite database by stopping the service briefly, copying the named v
 - The admin token is required from `.env`; anyone with it can delete pastes.
 - Paste contents are not encrypted in SQLite. Anyone with host or Docker-volume access can read them.
 - The app limits paste size to 1 MiB and escapes content in HTML templates.
+- Optional rate limiting (`PASTE_RATE_LIMIT`) mitigates accidental bursts, but does not make the service safe for public internet exposure. Restrict host firewall and network access.
 - This MVP does not provide per-user authentication. Anyone who can reach it can create and read pastes. Restrict network access accordingly.

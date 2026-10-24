@@ -5,6 +5,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, url_for
+from collections import deque
+from threading import Lock
+import time
+
 from werkzeug.exceptions import BadRequest, HTTPException
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -12,6 +16,32 @@ DB_PATH = DATA_DIR / "pastes.db"
 MAX_PASTE_BYTES = 1024 * 1024  # 1 MiB
 DEFAULT_TTL_HOURS = int(os.environ.get("DEFAULT_TTL_HOURS", "24"))
 ADMIN_TOKEN = os.environ.get("PASTE_ADMIN_TOKEN", "")
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("PASTE_RATE_LIMIT", "0"))
+
+_rate_limit_store: dict[str, deque[float]] = {}
+_store_lock = Lock()
+
+
+def check_rate_limit(ip: str, limit: int | None = None, window: int = 60) -> tuple[bool, int]:
+    effective_limit = RATE_LIMIT_PER_MINUTE if limit is None else limit
+    if effective_limit <= 0:
+        return True, 0
+    now = time.time()
+    cutoff = now - window
+    with _store_lock:
+        dq = _rate_limit_store.setdefault(ip, deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= effective_limit:
+            retry_after = max(int(dq[0] + window - now) + 1, 1)
+            return False, retry_after
+        dq.append(now)
+        return True, 0
+
+
+def reset_rate_limits():
+    with _store_lock:
+        _rate_limit_store.clear()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_PASTE_BYTES + 8192
@@ -120,6 +150,13 @@ def view_paste(paste_id):
 
 @app.post("/api/pastes")
 def api_create():
+    ip = request.remote_addr or "unknown"
+    allowed, retry_after = check_rate_limit(ip)
+    if not allowed:
+        resp = jsonify(error="Rate limit exceeded; please wait before creating more pastes")
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
     # JSON is convenient for scripts; raw request bodies work well with curl and stdin.
     if request.is_json:
         try:

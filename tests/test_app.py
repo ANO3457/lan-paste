@@ -15,6 +15,7 @@ import app as paste_app  # noqa: E402
 
 
 def setup_function():
+    paste_app.reset_rate_limits()
     with paste_app.connect() as db:
         db.execute("DELETE FROM pastes")
 
@@ -277,3 +278,50 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+def test_rate_limiting_disabled_by_default():
+    client = paste_app.app.test_client()
+    for i in range(15):
+        res = client.post("/api/pastes", json={"content": f"unlimited {i}"})
+        assert res.status_code == 201
+
+
+def test_rate_limiting_enforced_when_configured(monkeypatch):
+    client = paste_app.app.test_client()
+    monkeypatch.setattr(paste_app, "RATE_LIMIT_PER_MINUTE", 3)
+
+    # 3 requests succeed
+    for i in range(3):
+        res = client.post("/api/pastes", json={"content": f"allowed {i}"}, environ_base={"REMOTE_ADDR": "192.168.1.50"})
+        assert res.status_code == 201
+
+    # 4th request from same IP is rate limited
+    blocked = client.post("/api/pastes", json={"content": "blocked"}, environ_base={"REMOTE_ADDR": "192.168.1.50"})
+    assert blocked.status_code == 429
+    assert blocked.is_json
+    assert "Rate limit exceeded" in blocked.get_json()["error"]
+    assert "Retry-After" in blocked.headers
+    assert int(blocked.headers["Retry-After"]) >= 1
+
+    # A different IP is still allowed
+    different_ip = client.post("/api/pastes", json={"content": "allowed other ip"}, environ_base={"REMOTE_ADDR": "192.168.1.99"})
+    assert different_ip.status_code == 201
+
+
+def test_rate_limiting_resets_after_window(monkeypatch):
+    client = paste_app.app.test_client()
+    monkeypatch.setattr(paste_app, "RATE_LIMIT_PER_MINUTE", 2)
+
+    current_time = 1000.0
+    monkeypatch.setattr(paste_app.time, "time", lambda: current_time)
+
+    # Consume limit
+    assert client.post("/api/pastes", json={"content": "first"}).status_code == 201
+    assert client.post("/api/pastes", json={"content": "second"}).status_code == 201
+    assert client.post("/api/pastes", json={"content": "third"}).status_code == 429
+
+    # Advance time by 61 seconds
+    current_time += 61.0
+    res = client.post("/api/pastes", json={"content": "after window"})
+    assert res.status_code == 201
+

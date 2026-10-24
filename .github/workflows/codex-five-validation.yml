@@ -1,0 +1,20 @@
+name: Validate configurable paste size
+on:
+  push:
+    branches: [validation/codex24-five20]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6d0dbdc23f51a13c508a09e305dcae69579c9741
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: python -m compileall -q app.py tests
+      - run: docker build --tag lan-paste:validation .

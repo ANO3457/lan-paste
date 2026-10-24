@@ -95,6 +95,94 @@ curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
   -H 'X-Admin-Token: YOUR_ADMIN_TOKEN'
 ```
 
+### Shell & platform examples
+
+Replace `HOST-LAN-IP` with your host IP (e.g. `192.168.1.50`) and `PASTE_ID` with the returned 12-character ID.
+
+#### Bash / zsh (curl)
+
+- **Create a paste from a string:**
+  ```sh
+  printf 'hello from bash\n' | curl -fsS http://HOST-LAN-IP:8000/api/pastes \
+    -H 'X-Paste-Title: bash snippet' \
+    --data-binary @-
+  ```
+- **Send a local file with 7-day expiry:**
+  ```sh
+  curl -fsS http://HOST-LAN-IP:8000/api/pastes \
+    -H 'X-Paste-Title: app config' \
+    -H 'X-Paste-TTL: 168' \
+    --data-binary @./config.yaml
+  ```
+- **Read paste by ID:**
+  ```sh
+  curl -fsS http://HOST-LAN-IP:8000/api/pastes/PASTE_ID
+  ```
+- **Parse JSON response and open URL in browser:**
+  ```sh
+  URL=$(printf 'quick link' | curl -fsS http://HOST-LAN-IP:8000/api/pastes --data-binary @- | jq -r .url)
+  xdg-open "$URL"  # on macOS: open "$URL"
+  ```
+
+#### PowerShell (Windows / macOS / Linux)
+
+- **Create a paste using `Invoke-RestMethod` (JSON):**
+  ```powershell
+  $body = @{
+      title = "powershell note"
+      content = "hello from powershell"
+      ttl_hours = 24
+  } | ConvertTo-Json
+
+  $response = Invoke-RestMethod -Uri "http://HOST-LAN-IP:8000/api/pastes" -Method Post `
+      -ContentType "application/json; charset=utf-8" `
+      -Body $body
+
+  Write-Host "Paste URL: $($response.url)"
+  Start-Process $response.url
+  ```
+- **Send a local file as raw text:**
+  ```powershell
+  $content = Get-Content -Raw -Encoding utf8 .\config.yaml
+  $response = Invoke-RestMethod -Uri "http://HOST-LAN-IP:8000/api/pastes" -Method Post `
+      -Headers @{ "X-Paste-Title" = "config snippet"; "X-Paste-TTL" = "168" } `
+      -ContentType "text/plain; charset=utf-8" `
+      -Body $content
+
+  $response.url
+  ```
+- **Read paste by ID:**
+  ```powershell
+  $paste = Invoke-RestMethod -Uri "http://HOST-LAN-IP:8000/api/pastes/PASTE_ID"
+  $paste.content
+  ```
+- *Platform note:* In Windows PowerShell 5.1, explicitly specify `-Encoding utf8` on `Get-Content` to avoid ANSI/OEM character conversion on non-ASCII text. PowerShell 7+ defaults to UTF-8 without BOM.
+
+#### Windows Command Prompt (cmd.exe)
+
+Modern Windows 10 and 11 include `curl.exe` out of the box:
+
+- **Create a paste from a local file:**
+  ```cmd
+  curl.exe -fsS http://HOST-LAN-IP:8000/api/pastes ^
+    -H "X-Paste-Title: cmd snippet" ^
+    -H "X-Paste-TTL: 24" ^
+    --data-binary @config.yaml
+  ```
+- **Send text from stdin:**
+  ```cmd
+  echo hello from cmd| curl.exe -fsS http://HOST-LAN-IP:8000/api/pastes --data-binary @-
+  ```
+- **Read paste by ID:**
+  ```cmd
+  curl.exe -fsS http://HOST-LAN-IP:8000/api/pastes/PASTE_ID
+  ```
+- **Open paste URL in default browser:**
+  ```cmd
+  start http://HOST-LAN-IP:8000/p/PASTE_ID
+  ```
+- *Platform note:* `cmd.exe` uses `^` for line continuation and double quotes (`"`) for header arguments. Notice there is no space between the text and pipe (`|`) in `echo text|` to prevent trailing whitespace from being appended to the paste content.
+
 ## Maintenance
 
 ```sh

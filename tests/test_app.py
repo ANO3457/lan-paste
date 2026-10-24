@@ -277,3 +277,85 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+def test_raw_text_create_and_read_paste():
+    client = paste_app.app.test_client()
+    raw_content = "systemd[1]: Started LAN Paste service.\n[INFO] Listening on 0.0.0.0:8000"
+    response = client.post(
+        "/api/pastes",
+        data=raw_content,
+        content_type="text/plain",
+    )
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert "id" in payload
+    assert "url" in payload
+    assert payload["expires_in_hours"] == 24
+    assert f"/p/{payload['id']}" in payload["url"]
+
+    fetched = client.get(f"/api/pastes/{payload['id']}")
+    assert fetched.status_code == 200
+    fetched_data = fetched.get_json()
+    assert fetched_data["content"] == raw_content
+    assert fetched_data["title"] == ""
+
+
+def test_raw_text_with_title_and_ttl_headers():
+    client = paste_app.app.test_client()
+    raw_content = "192.168.1.100 router.local"
+    response = client.post(
+        "/api/pastes",
+        data=raw_content,
+        headers={"X-Paste-Title": "Static DNS records", "X-Paste-TTL": "168"},
+        content_type="text/plain",
+    )
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["expires_in_hours"] == 168
+
+    fetched = client.get(f"/api/pastes/{payload['id']}")
+    assert fetched.status_code == 200
+    fetched_data = fetched.get_json()
+    assert fetched_data["title"] == "Static DNS records"
+    assert fetched_data["content"] == raw_content
+
+
+def test_raw_text_with_ttl_never():
+    client = paste_app.app.test_client()
+    response = client.post(
+        "/api/pastes",
+        data="permanent note",
+        headers={"X-Paste-TTL": "never"},
+        content_type="text/plain",
+    )
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["expires_in_hours"] is None
+
+    fetched = client.get(f"/api/pastes/{payload['id']}")
+    assert fetched.status_code == 200
+    assert fetched.get_json()["expires_at"] is None
+
+
+@pytest.mark.parametrize("empty_body", [b"", b"   ", b"\n\t  \r\n"])
+def test_raw_text_reject_empty_or_whitespace(empty_body):
+    response = paste_app.app.test_client().post(
+        "/api/pastes",
+        data=empty_body,
+        content_type="text/plain",
+    )
+    assert_api_error(response, 400)
+    assert "empty" in response.get_json()["error"]
+
+
+@pytest.mark.parametrize("invalid_ttl", ["5", "12", "invalid", "-1", "0", "999"])
+def test_raw_text_reject_unsupported_ttl(invalid_ttl):
+    response = paste_app.app.test_client().post(
+        "/api/pastes",
+        data="some code snippet",
+        headers={"X-Paste-TTL": invalid_ttl},
+        content_type="text/plain",
+    )
+    assert_api_error(response, 400)
+    assert "ttl_hours" in response.get_json()["error"]

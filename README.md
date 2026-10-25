@@ -95,6 +95,11 @@ curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
   -H 'X-Admin-Token: YOUR_ADMIN_TOKEN'
 ```
 
+## Troubleshooting
+
+See the [troubleshooting guide](docs/troubleshooting.md) for startup, port,
+connectivity, expiry and database-volume problems.
+
 ## Maintenance
 
 ```sh

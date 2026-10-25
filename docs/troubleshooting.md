@@ -72,11 +72,11 @@ at `/data`; the Dockerfile fixes its ownership before switching to `appuser`.
 Do not remove those privileges or replace the volume with an unwritable bind
 mount without arranging equivalent ownership.
 
-If the service stays up long enough, check the process user and directory
+If the service stays up long enough, check the application user and directory
 permissions without reading the database:
 
 ```sh
-docker compose exec lan-paste sh -c 'id; ls -ld /data'
+docker compose exec --user appuser lan-paste sh -c 'id; ls -ld /data'
 ```
 
 Correct the reported configuration or mount problem, then run

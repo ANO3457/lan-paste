@@ -104,7 +104,7 @@ docker compose down             # keeps named volume and pastes
 docker compose down -v          # DELETES the database volume and all pastes
 ```
 
-Back up the SQLite database by stopping the service briefly, copying the named volume's `pastes.db` and any `pastes.db-wal` / `pastes.db-shm` files if present, then starting it again. For a straightforward consistent backup, stop the container first.
+Back up the SQLite database by stopping the service briefly, copying the named volume's `pastes.db` and any `pastes.db-wal` / `pastes.db-shm` files if present, then starting it again. For a straightforward consistent backup, stop the container first. See [docs/backup-restore.md](docs/backup-restore.md) for full step-by-step cold backup, restore, and WAL safety instructions.
 
 ## Security notes
 

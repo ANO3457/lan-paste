@@ -95,6 +95,11 @@ curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
   -H 'X-Admin-Token: YOUR_ADMIN_TOKEN'
 ```
 
+## Browser checks
+
+Before changing the UI, follow the [manual browser checklist](docs/browser-checklist.md)
+for responsive layouts, themes, keyboard workflows and copy/error feedback.
+
 ## Maintenance
 
 ```sh

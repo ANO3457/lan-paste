@@ -277,3 +277,95 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+@pytest.fixture
+def paging_rows():
+    with paste_app.connect() as db:
+        db.executemany(
+            "INSERT INTO pastes (id, title, content, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            [(f"page-{i:03}", f"Title {i}", "x" * 200, "2026-01-01T12:00:00+00:00", None)
+             for i in range(105)],
+        )
+        db.execute(
+            "INSERT INTO pastes (id, title, content, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            ("expired-paging", "expired marker", "expired", "2026-01-02T12:00:00+00:00", "2000-01-01T00:00:00+00:00"),
+        )
+    return [f"page-{i:03}" for i in reversed(range(105))]
+
+
+def test_list_pagination_defaults_and_all_pages(paging_rows):
+    client = paste_app.app.test_client()
+    collected = []
+    for page, expected_size in [(1, 50), (2, 50), (3, 5), (4, 0)]:
+        response = client.get(f"/api/pastes?page={page}")
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert set(payload) == {"pastes"}
+        assert len(payload["pastes"]) == expected_size
+        collected.extend(row["id"] for row in payload["pastes"])
+        for row in payload["pastes"]:
+            assert set(row) == {"id", "title", "created_at", "expires_at", "preview"}
+            assert row["preview"] == "x" * 180
+    assert collected == paging_rows
+    assert len(set(collected)) == 105
+    assert client.get("/api/pastes").get_json()["pastes"] == client.get("/api/pastes?page=1").get_json()["pastes"]
+
+
+def test_custom_page_size_and_maximum(paging_rows):
+    client = paste_app.app.test_client()
+    for size in [1, 7, 100]:
+        first = client.get(f"/api/pastes?per_page={size}").get_json()["pastes"]
+        second = client.get(f"/api/pastes?page=2&per_page={size}").get_json()["pastes"]
+        assert [row["id"] for row in first] == paging_rows[:size]
+        assert [row["id"] for row in second] == paging_rows[size:size * 2]
+
+
+@pytest.mark.parametrize("route", ["/", "/api/pastes"])
+@pytest.mark.parametrize("query", [
+    "page=0", "page=-1", "page=", "page=abc", "page=1.5",
+    "per_page=0", "per_page=-1", "per_page=101", "per_page=", "per_page=x",
+    "page=1&page=2", "per_page=1&per_page=2",
+    "page=999999999999999999999999999999999999999999999999999999",
+])
+def test_invalid_pagination_is_bad_request(route, query):
+    response = paste_app.app.test_client().get(f"{route}?{query}")
+    assert response.status_code == 400
+    if route.startswith("/api/"):
+        assert set(response.get_json()) == {"error"}
+        assert isinstance(response.get_json()["error"], str)
+
+
+@pytest.mark.parametrize("route", ["/", "/api/pastes"])
+def test_empty_and_out_of_range_pages(route):
+    client = paste_app.app.test_client()
+    for page in [1, 2, 99999999]:
+        response = client.get(f"{route}?page={page}")
+        assert response.status_code == 200
+        if route.startswith("/api/"):
+            assert response.get_json() == {"pastes": []}
+        else:
+            assert b"No pastes on this page" in response.data
+            assert b'rel="next"' not in response.data
+
+
+def test_browser_pagination_links_and_order(paging_rows):
+    client = paste_app.app.test_client()
+    for page in [1, 2, 3]:
+        text = client.get(f"/?page={page}&per_page=50").get_data(as_text=True)
+        ids = [f"page-{i:03}" for i in range(105) if f'href="/p/page-{i:03}"' in text]
+        expected = paging_rows[(page - 1) * 50:page * 50]
+        assert set(ids) == set(expected)
+        assert "expired marker" not in text
+        assert ('rel="prev"' in text) == (page > 1)
+        assert ('rel="next"' in text) == (page < 3)
+        for index in range(len(expected) - 1):
+            assert text.index(f'href="/p/{expected[index]}"') < text.index(f'href="/p/{expected[index + 1]}"')
+    assert 'per_page=7' in client.get('/?page=2&per_page=7').get_data(as_text=True)
+
+
+@pytest.mark.parametrize("route", ["/", "/api/pastes"])
+def test_pagination_sqlite_offset_boundary(route):
+    client = paste_app.app.test_client()
+    assert client.get(f"{route}?page=9223372036854775808&per_page=1").status_code == 200
+    assert client.get(f"{route}?page=9223372036854775808&per_page=2").status_code == 400

@@ -35,7 +35,7 @@ The port is reachable only where network routes and firewall rules allow it. Do 
 - Create pastes with an optional title
 - Choose expiry after 1 hour, 24 hours, 7 days, or never
 - Open a paste by its unique URL and copy its content
-- View the 50 most recent pastes
+- Browse older pastes with Previous/Next links (50 per page by default)
 - Expired pastes are removed during normal requests
 
 ## Quick-paste API
@@ -81,6 +81,30 @@ List recent pastes:
 ```sh
 curl -fsS http://HOST-LAN-IP:8000/api/pastes
 ```
+
+### Pagination
+
+Both the home page and `GET /api/pastes` accept `page` (default `1`) and
+`per_page` (default `50`, maximum `100`). For example:
+
+```sh
+curl -fsS 'http://HOST-LAN-IP:8000/api/pastes?page=2&per_page=20'
+```
+
+The response shape stays `{pastes: [...]}` with the same preview fields; it
+contains no total count. Items are ordered by `created_at DESC, id DESC`, and
+expired rows are removed before paging. Empty or out-of-range pages return
+HTTP 200 with an empty array. The browser shows the current page and provides
+Previous/Next links when applicable, preserving `per_page`.
+
+Parameters must each occur once and contain positive ASCII decimal integers
+of at most 19 digits.
+Invalid values, `per_page` above 100, or an offset beyond SQLite's signed 64-bit
+range return HTTP 400 (JSON `{error: "..."}` for the API). Omitting parameters
+keeps existing clients on the first 50 entries. Each query fetches at most
+101 rows, including one look-ahead row to decide whether Next is available.
+Offset pagination is not a snapshot: concurrent creations, deletions or expiry
+can shift entries between requests; deep offsets can take longer to scan.
 
 Read a paste as JSON:
 

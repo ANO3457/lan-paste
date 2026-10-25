@@ -107,3 +107,6 @@ footer a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+.pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+.page-number { overflow-wrap: anywhere; max-width: 100%; }

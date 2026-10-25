@@ -42,7 +42,7 @@
       </form>
     </section>
     <section class="panel">
-      <div class="section-head"><div><h2>Recent pastes</h2><p class="muted">Your latest saved snippets</p></div><span class="muted">Latest 50</span></div>
+      <div class="section-head"><div><h2>Recent pastes</h2><p class="muted">Browse your saved snippets</p></div><span class="muted">Up to {{ per_page }} per page</span></div>
       {% if pastes %}
       <div class="paste-list">
         {% for paste in pastes %}
@@ -54,8 +54,13 @@
         {% endfor %}
       </div>
       {% else %}
-      <p class="muted">Nothing saved yet. Create your first paste above.</p>
+      <p class="muted">No pastes on this page. Create a paste above or return to an earlier page.</p>
       {% endif %}
+      <nav class="pagination" aria-label="Paste pages">
+        {% if page > 1 %}<a class="button secondary" rel="prev" href="{{ url_for('index', page=page-1, per_page=per_page) }}">Previous</a>{% endif %}
+        <span class="muted page-number">Page {{ page }}</span>
+        {% if has_next %}<a class="button secondary" rel="next" href="{{ url_for('index', page=page+1, per_page=per_page) }}">Next</a>{% endif %}
+      </nav>
     </section>
     <footer>Maximum paste size: 1 MiB. Built for trusted networks; don’t use it as a public secret vault.</footer>
   </main>

@@ -102,12 +102,50 @@ def create_paste(content, title="", ttl_hours=None):
     return paste_id
 
 
-@app.get("/")
-def index():
+def pagination_args():
+    values = []
+    for name, default, maximum in (("page", 1, 2**63), ("per_page", 50, 100)):
+        supplied = request.args.getlist(name)
+        if not supplied:
+            values.append(default)
+            continue
+        raw = supplied[0]
+        if (
+            len(supplied) != 1
+            or len(raw) > 19
+            or not raw.isascii()
+            or not raw.isdecimal()
+        ):
+            abort(400, description=f"{name} must be a positive integer")
+        value = int(raw)
+        if not 1 <= value <= maximum:
+            abort(400, description=f"{name} must be between 1 and {maximum}")
+        values.append(value)
+    page, per_page = values
+    if (page - 1) * per_page > 2**63 - 1:
+        abort(400, description="page offset is too large")
+    return page, per_page
+
+
+def recent_pastes(page, per_page):
     with connect() as db:
         cleanup_expired(db)
-        rows = db.execute("SELECT id, title, created_at, expires_at, substr(content, 1, 180) AS preview FROM pastes ORDER BY created_at DESC LIMIT 50").fetchall()
-    return render_template("index.html", pastes=rows, default_ttl=DEFAULT_TTL_HOURS)
+        rows = db.execute(
+            "SELECT id, title, created_at, expires_at, substr(content, 1, 180) AS preview "
+            "FROM pastes ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            (per_page + 1, (page - 1) * per_page),
+        ).fetchall()
+    return rows[:per_page], len(rows) > per_page
+
+
+@app.get("/")
+def index():
+    page, per_page = pagination_args()
+    rows, has_next = recent_pastes(page, per_page)
+    return render_template(
+        "index.html", pastes=rows, default_ttl=DEFAULT_TTL_HOURS,
+        page=page, per_page=per_page, has_next=has_next,
+    )
 
 
 @app.get("/p/<paste_id>")
@@ -148,9 +186,8 @@ def api_create():
 
 @app.get("/api/pastes")
 def api_list():
-    with connect() as db:
-        cleanup_expired(db)
-        rows = db.execute("SELECT id, title, created_at, expires_at, substr(content, 1, 180) AS preview FROM pastes ORDER BY created_at DESC LIMIT 50").fetchall()
+    page, per_page = pagination_args()
+    rows, _ = recent_pastes(page, per_page)
     return jsonify(pastes=[dict(row) for row in rows])
 
 

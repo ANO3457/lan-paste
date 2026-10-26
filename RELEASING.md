@@ -21,9 +21,9 @@ You do not need to draft or publish a GitHub Release manually. Push a new versio
 
 ## Docker Hub setup (optional)
 
-To enable Docker Hub publishing, create a Docker Hub repository named `lan-paste` under your Docker Hub account. Then add these repository Actions secrets in GitHub under **Settings → Secrets and variables → Actions**:
+The Docker Hub repository already exists at [tomi311/lan-paste](https://hub.docker.com/r/tomi311/lan-paste). To enable automated publishing, add these repository Actions secrets in GitHub under **Settings → Secrets and variables → Actions**:
 
-- `DOCKERHUB_USERNAME`: your Docker Hub username.
+- `DOCKERHUB_USERNAME`: `tomi311`.
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push to the repository.
 
 Use an access token, not your Docker Hub password. Do not commit credentials or paste them into issues or pull requests.
@@ -38,7 +38,7 @@ For example, pushing `v0.1.0` publishes these GHCR tags:
 - `ghcr.io/tomi3-11/lan-paste:0.1`
 - `ghcr.io/tomi3-11/lan-paste:latest`
 
-When Docker Hub is configured, the same tags are published as `docker.io/DOCKERHUB_USERNAME/lan-paste:0.1.0`, `:0.1`, and `:latest`, where `DOCKERHUB_USERNAME` is the account configured in the GitHub secret.
+When Docker Hub is configured, the same tags are published as `docker.io/tomi311/lan-paste:0.1.0`, `docker.io/tomi311/lan-paste:0.1`, and `docker.io/tomi311/lan-paste:latest`.
 
 The `latest` tag tracks the most recently published stable version. Pin a full version tag for reproducible deployments.
 

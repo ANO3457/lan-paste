@@ -13,28 +13,45 @@ The CI workflow runs tests and builds the Docker image for pull requests and pus
 
 1. Rejects tags that are not stable `vMAJOR.MINOR.PATCH` versions (for example, `v0.1.0`).
 2. Builds and publishes the container to GitHub Container Registry (GHCR).
-3. Publishes version tags: `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`, and `latest`.
-4. After the image publish succeeds, creates a GitHub Release with automatically generated release notes.
+3. If Docker Hub credentials are configured, publishes the same image to Docker Hub.
+4. Publishes version tags: `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`, and `latest` to each enabled registry.
+5. After the GHCR image publish succeeds, creates a GitHub Release with automatically generated release notes.
 
-You do not need to draft or publish a GitHub Release manually. Push a new version tag only after the intended commit is merged into `main`; the workflow handles the image and release. Never reuse or move an existing release tag.
+You do not need to draft or publish a GitHub Release manually. Push a new version tag only after the intended commit is merged into `main`; the workflow handles image publishing and the release. Never reuse or move an existing release tag.
 
-For example, pushing `v0.1.0` publishes:
+## Docker Hub setup (optional)
+
+The Docker Hub repository already exists at [tomi311/lan-paste](https://hub.docker.com/r/tomi311/lan-paste). To enable automated publishing, add these repository Actions secrets in GitHub under **Settings → Secrets and variables → Actions**:
+
+- `DOCKERHUB_USERNAME`: `tomi311`.
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push to the repository.
+
+Use an access token, not your Docker Hub password. Do not commit credentials or paste them into issues or pull requests.
+
+If either secret is missing, the workflow skips Docker Hub publishing and continues publishing to GHCR. After configuring both secrets, the next new release tag will publish to both registries. The existing `v0.1.0` tag will not automatically rerun just because secrets were added; do not move or reuse a release tag. Verify a later release's workflow run and pull the published image from Docker Hub.
+
+## Image tags
+
+For example, pushing `v0.1.0` publishes these GHCR tags:
 
 - `ghcr.io/tomi3-11/lan-paste:0.1.0`
 - `ghcr.io/tomi3-11/lan-paste:0.1`
 - `ghcr.io/tomi3-11/lan-paste:latest`
 
+When Docker Hub is configured, the same tags are published as `docker.io/tomi311/lan-paste:0.1.0`, `docker.io/tomi311/lan-paste:0.1`, and `docker.io/tomi311/lan-paste:latest`.
+
 The `latest` tag tracks the most recently published stable version. Pin a full version tag for reproducible deployments.
 
 ## Release checklist
 
-1. Ensure the CI checks pass and the release-ready changes are merged into `main`.
+1. Ensure CI checks pass and the release-ready changes are merged into `main`.
 2. Review the README, tests, security notes, and API or configuration changes.
-3. Create and push a new stable semantic-version tag, for example `v0.1.0`, targeting the intended commit on `main`.
-4. Monitor the GitHub Actions run. The GitHub Release is created only if the container build and GHCR publish succeed.
-5. Verify the release notes and image tags on the repository's Releases and Packages pages.
+3. Confirm Docker Hub secrets are configured if publishing to Docker Hub is intended.
+4. Create and push a new stable semantic-version tag, for example `v0.1.1`, targeting the intended commit on `main`.
+5. Monitor the GitHub Actions run. The GitHub Release is created only if the GHCR container build and publish succeed.
+6. Verify release notes and image tags on the repository's Releases and Packages pages and, if enabled, Docker Hub.
 
-## First publication and package visibility
+## First GHCR publication and package visibility
 
 The first GHCR publication may create the package with private visibility. After the first successful publish, open the package page under the GitHub account or organization, review its access settings, and set it to Public if anyone should be able to pull it without authenticating. Confirm anonymous pulls work before announcing the release.
 

@@ -1,4 +1,4 @@
-name: Publish container
+name: Publish container and create release
 
 on:
   push:
@@ -6,14 +6,22 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
   publish:
-    name: Build and publish to GHCR
+    name: Validate version and publish to GHCR
     runs-on: ubuntu-latest
     steps:
+      - name: Validate stable semantic version tag
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a stable version tag such as v0.1.0; got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -36,6 +44,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=LAN Paste
+            org.opencontainers.image.description=Lightweight self-hosted paste service
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -44,3 +56,21 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release with generated notes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: LAN Paste ${{ github.ref_name }}
+          generate_release_notes: true
+          make_latest: true

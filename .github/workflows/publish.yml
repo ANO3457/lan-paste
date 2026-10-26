@@ -76,7 +76,7 @@ jobs:
         if: steps.dockerhub-config.outputs.enabled == 'true'
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lan-paste
+          images: docker.io/tomi311/lan-paste
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

@@ -31,12 +31,39 @@ raw requests. An unusually escape-heavy JSON body may reach the HTTP limit
 first; send UTF-8 directly or use the raw-body API in that case. Recreate the
 container after changing the setting (`docker compose up -d --force-recreate`).
 
-## 2. Build and run
+## 2. Build and run from source
 
 ```sh
 docker compose up -d --build
 docker compose logs -f
 ```
+
+This builds the image from the checked-out source code.
+
+## Run a published image (no local build)
+
+Released images are published to GitHub Container Registry (GHCR). For the first release, use `ghcr.io/tomi3-11/lan-paste:0.1.0`. The `latest` tag tracks the most recently published stable release; pin a version tag for reproducible deployments.
+
+Generate a strong admin token and start the container:
+
+```sh
+export PASTE_ADMIN_TOKEN="$(openssl rand -hex 32)"
+docker volume create lan-paste-data
+
+docker run -d \
+  --name lan-paste \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -e PASTE_ADMIN_TOKEN="$PASTE_ADMIN_TOKEN" \
+  -e DEFAULT_TTL_HOURS=24 \
+  -e DATA_DIR=/data \
+  -v lan-paste-data:/data \
+  ghcr.io/tomi3-11/lan-paste:0.1.0
+```
+
+This publishes port 8000 on the host's network interfaces. Restrict access with your host firewall; do not configure router port forwarding. To bind only to the same machine, replace `-p 8000:8000` with `-p 127.0.0.1:8000:8000`. Keep the generated admin token private. To update to a newer release, pull and recreate the container using the new version tag while keeping the same `lan-paste-data` volume.
+
+## 3. Connect
 
 Find the host's LAN IP, then open `http://HOST-LAN-IP:8000`. On a Linux host, `ip -brief address` can help identify the LAN interface and address. Use the host's Tailscale IP to connect from your own Tailscale devices, for example `http://TAILSCALE-IP:8000`.
 
@@ -55,16 +82,16 @@ The port is reachable only where network routes and firewall rules allow it. Do 
 Paste stdin (or a file) and receive JSON containing the paste URL:
 
 ```sh
-printf 'hello from terminal\n' | curl -fsS http://HOST-LAN-IP:8000/api/pastes \\
-  -H 'X-Paste-Title: terminal note' \\
+printf 'hello from terminal\n' | curl -fsS http://HOST-LAN-IP:8000/api/pastes \
+  -H 'X-Paste-Title: terminal note' \
   --data-binary @-
 ```
 
 Paste a file:
 
 ```sh
-curl -fsS http://HOST-LAN-IP:8000/api/pastes \\
-  -H 'X-Paste-Title: config snippet' \\
+curl -fsS http://HOST-LAN-IP:8000/api/pastes \
+  -H 'X-Paste-Title: config snippet' \
   --data-binary @./config.yaml
 ```
 
@@ -103,7 +130,7 @@ curl -fsS http://HOST-LAN-IP:8000/api/pastes/PASTE_ID
 Delete a paste (admin token required):
 
 ```sh
-curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
+curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \
   -H 'X-Admin-Token: YOUR_ADMIN_TOKEN'
 ```
 
@@ -116,6 +143,8 @@ docker compose down             # keeps named volume and pastes
 docker compose down -v          # DELETES the database volume and all pastes
 ```
 
+For a container started with `docker run`, use `docker logs --tail=100 lan-paste` to inspect logs and `docker restart lan-paste` to restart it.
+
 Back up the SQLite database by stopping the service briefly, copying the named volume's `pastes.db` and any `pastes.db-wal` / `pastes.db-shm` files if present, then starting it again. For a straightforward consistent backup, stop the container first.
 
 ## Security notes
@@ -123,7 +152,7 @@ Back up the SQLite database by stopping the service briefly, copying the named v
 - Designed for trusted private networks, not the public internet.
 - Do not port-forward TCP/8000 on your router.
 - `0.0.0.0:8000` in Compose publishes on host interfaces; enforce firewall rules for LAN and Tailscale access.
-- The admin token is required from `.env`; anyone with it can delete pastes.
+- The admin token is required for DELETE API requests; anyone with it can delete pastes.
 - Paste contents are not encrypted in SQLite. Anyone with host or Docker-volume access can read them.
 - The app limits paste size to `MAX_PASTE_BYTES` (1 MiB by default) and escapes content in HTML templates.
 - This MVP does not provide per-user authentication. Anyone who can reach it can create and read pastes. Restrict network access accordingly.

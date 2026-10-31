@@ -9,7 +9,20 @@ from werkzeug.exceptions import BadRequest, HTTPException
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "pastes.db"
-MAX_PASTE_BYTES = 1024 * 1024  # 1 MiB
+def parse_max_paste_bytes(value=None):
+    raw = os.environ.get("MAX_PASTE_BYTES") if value is None else value
+    if raw in (None, ""):
+        return 1024 * 1024
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"MAX_PASTE_BYTES must be a valid integer, got {raw!r}") from None
+    if parsed <= 0:
+        raise ValueError(f"MAX_PASTE_BYTES must be greater than zero, got {parsed}")
+    return parsed
+
+
+MAX_PASTE_BYTES = parse_max_paste_bytes()
 DEFAULT_TTL_HOURS = int(os.environ.get("DEFAULT_TTL_HOURS", "24"))
 ADMIN_TOKEN = os.environ.get("PASTE_ADMIN_TOKEN", "")
 
@@ -89,7 +102,8 @@ def create_paste(content, title="", ttl_hours=None):
     except UnicodeEncodeError:
         raise PasteValidationError("content and title must be valid UTF-8") from None
     if len(encoded_content) > MAX_PASTE_BYTES:
-        raise PasteValidationError("Paste is too large; maximum is 1 MiB")
+        limit_desc = "1 MiB" if MAX_PASTE_BYTES == 1024 * 1024 else f"{MAX_PASTE_BYTES} bytes"
+        raise PasteValidationError(f"Paste is too large; maximum is {limit_desc}")
     created = now_utc()
     expires = created + timedelta(hours=ttl_hours) if ttl_hours is not None else None
     paste_id = secrets.token_urlsafe(9)

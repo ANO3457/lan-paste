@@ -1,7 +1,6 @@
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 
@@ -277,3 +276,31 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+def test_parse_max_paste_bytes():
+    assert paste_app.parse_max_paste_bytes(None) == 1024 * 1024
+    assert paste_app.parse_max_paste_bytes("") == 1024 * 1024
+    assert paste_app.parse_max_paste_bytes("2097152") == 2097152
+    assert paste_app.parse_max_paste_bytes(512) == 512
+
+    for invalid in ("not-a-number", "1.5", "0", "-1", "-100"):
+        with pytest.raises(ValueError):
+            paste_app.parse_max_paste_bytes(invalid)
+
+
+def test_custom_max_paste_bytes_enforced(monkeypatch):
+    custom_limit = 200
+    monkeypatch.setattr(paste_app, "MAX_PASTE_BYTES", custom_limit)
+    monkeypatch.setitem(paste_app.app.config, "MAX_CONTENT_LENGTH", custom_limit + 8192)
+
+    client = paste_app.app.test_client()
+
+    # Exact boundary: 200 bytes allowed
+    res_ok = client.post("/api/pastes", data="a" * custom_limit, content_type="text/plain")
+    assert res_ok.status_code == 201
+
+    # Over limit: 201 bytes rejected
+    res_err = client.post("/api/pastes", data="a" * (custom_limit + 1), content_type="text/plain")
+    assert res_err.status_code == 400
+    assert "Paste is too large" in res_err.get_json()["error"]

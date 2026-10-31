@@ -44,6 +44,7 @@ docker run -d \
   -p 8000:8000 \
   -e PASTE_ADMIN_TOKEN="$PASTE_ADMIN_TOKEN" \
   -e DEFAULT_TTL_HOURS=24 \
+  -e MAX_PASTE_BYTES=1048576 \
   -e DATA_DIR=/data \
   -v lan-paste-data:/data \
   ghcr.io/tomi3-11/lan-paste:0.1.0

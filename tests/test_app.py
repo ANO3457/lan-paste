@@ -277,3 +277,92 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert "still-readable-marker" in response.get_data(as_text=True)
     with paste_app.connect() as db:
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
+
+
+# --------------------------------------------------------------------------- Rate limiting tests (#19)
+
+
+def test_parse_rate_limit_helper():
+    assert paste_app.parse_rate_limit(None) == 0
+    assert paste_app.parse_rate_limit("") == 0
+    assert paste_app.parse_rate_limit("0") == 0
+    assert paste_app.parse_rate_limit(" 15 ") == 15
+    assert paste_app.parse_rate_limit("-5") == 0
+    assert paste_app.parse_rate_limit("invalid") == 0
+
+
+def test_rate_limit_enforced_when_configured():
+    client = paste_app.app.test_client()
+    paste_app.rate_limiter.reset()
+    paste_app.rate_limiter.limit = 2
+    paste_app.rate_limiter.behind_proxy = False
+
+    # First request: ok
+    r1 = client.post("/api/pastes", json={"content": "paste 1"})
+    assert r1.status_code == 201
+
+    # Second request: ok
+    r2 = client.post("/api/pastes", json={"content": "paste 2"})
+    assert r2.status_code == 201
+
+    # Third request: 429 Too Many Requests
+    r3 = client.post("/api/pastes", json={"content": "paste 3"})
+    assert r3.status_code == 429
+    assert r3.is_json
+    assert "Rate limit exceeded" in r3.get_json()["error"]
+    assert "Retry-After" in r3.headers
+    assert int(r3.headers["Retry-After"]) >= 1
+
+    # Reset
+    paste_app.rate_limiter.reset()
+    paste_app.rate_limiter.limit = 0
+
+
+def test_rate_limiter_deterministic_sliding_window():
+    limiter = paste_app.RateLimiter(limit_per_minute=2, window_seconds=60)
+    t0 = 1000.0
+
+    allowed, _ = limiter.is_allowed("192.168.1.10", now=t0)
+    assert allowed is True
+
+    allowed, _ = limiter.is_allowed("192.168.1.10", now=t0 + 10)
+    assert allowed is True
+
+    # 3rd request at t0+20 is blocked
+    allowed, retry_after = limiter.is_allowed("192.168.1.10", now=t0 + 20)
+    assert allowed is False
+    assert retry_after == 41  # 1000 + 60 - 1020 + 1 = 41
+
+    # Different IP is not blocked
+    allowed, _ = limiter.is_allowed("192.168.1.20", now=t0 + 25)
+    assert allowed is True
+
+    # After window passes t0+61, oldest expired, request allowed
+    allowed, _ = limiter.is_allowed("192.168.1.10", now=t0 + 61)
+    assert allowed is True
+
+
+def test_rate_limit_proxy_ip_handling():
+    client = paste_app.app.test_client()
+    paste_app.rate_limiter.reset()
+    paste_app.rate_limiter.limit = 1
+
+    # Without behind_proxy, X-Forwarded-For is ignored, uses remote_addr
+    paste_app.rate_limiter.behind_proxy = False
+    r1 = client.post("/api/pastes", json={"content": "p1"}, headers={"X-Forwarded-For": "10.0.0.1"})
+    assert r1.status_code == 201
+    r2 = client.post("/api/pastes", json={"content": "p2"}, headers={"X-Forwarded-For": "10.0.0.2"})
+    assert r2.status_code == 429  # blocked because same remote_addr
+
+    # With behind_proxy, client IP from X-Forwarded-For is respected
+    paste_app.rate_limiter.reset()
+    paste_app.rate_limiter.behind_proxy = True
+    r3 = client.post("/api/pastes", json={"content": "p3"}, headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.254"})
+    assert r3.status_code == 201
+    r4 = client.post("/api/pastes", json={"content": "p4"}, headers={"X-Forwarded-For": "10.0.0.2, 10.0.0.254"})
+    assert r4.status_code == 201  # allowed because different client IP
+
+    # Reset
+    paste_app.rate_limiter.reset()
+    paste_app.rate_limiter.limit = 0
+    paste_app.rate_limiter.behind_proxy = False

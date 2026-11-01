@@ -144,3 +144,16 @@ Back up the SQLite database by stopping the service briefly, copying the named v
 - Paste contents are not encrypted in SQLite. Anyone with host or Docker-volume access can read them.
 - The app limits paste size to 1 MiB and escapes content in HTML templates.
 - This MVP does not provide per-user authentication. Anyone who can reach it can create and read pastes. Restrict network access accordingly.
+
+### Rate limiting
+
+To prevent accidental request loops or abusive paste creation bursts on a shared network, set `PASTE_RATE_LIMIT_PER_MINUTE`:
+
+```bash
+PASTE_RATE_LIMIT_PER_MINUTE=30
+```
+
+When configured, clients exceeding the threshold receive `429 Too Many Requests` with a JSON payload `{"error": "Rate limit exceeded. Too many pastes created."}` and a standard `Retry-After` header.
+
+If `lan-paste` is hosted behind a reverse proxy (e.g. Nginx, Caddy), set `PASTE_BEHIND_PROXY=1` so client IPs are extracted from the `X-Forwarded-For` header rather than the direct socket peer. Only enable this behind a trusted proxy, as client-supplied forwarding headers must not be trusted on an open network.
+

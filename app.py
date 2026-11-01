@@ -6,12 +6,75 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, url_for
 from werkzeug.exceptions import BadRequest, HTTPException
+import time
+from collections import defaultdict, deque
+
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH = DATA_DIR / "pastes.db"
 MAX_PASTE_BYTES = 1024 * 1024  # 1 MiB
 DEFAULT_TTL_HOURS = int(os.environ.get("DEFAULT_TTL_HOURS", "24"))
 ADMIN_TOKEN = os.environ.get("PASTE_ADMIN_TOKEN", "")
+
+class RateLimiter:
+    """In-memory sliding-window rate limiter by client IP with zero external dependencies."""
+
+    def __init__(
+        self,
+        limit_per_minute: int = 0,
+        behind_proxy: bool = False,
+        window_seconds: int = 60,
+    ):
+        self.limit = max(0, limit_per_minute)
+        self.behind_proxy = behind_proxy
+        self.window_seconds = window_seconds
+        self._records: dict[str, deque[float]] = defaultdict(deque)
+
+    def get_client_ip(self, req) -> str:
+        if self.behind_proxy:
+            forwarded = req.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return req.remote_addr or "127.0.0.1"
+
+    def is_allowed(self, client_ip: str, now: float | None = None) -> tuple[bool, int]:
+        """Check if request is permitted. Returns (allowed, retry_after_seconds)."""
+        if self.limit <= 0:
+            return True, 0
+        current_time = time.time() if now is None else now
+        cutoff = current_time - self.window_seconds
+        timestamps = self._records[client_ip]
+
+        while timestamps and timestamps[0] <= cutoff:
+            timestamps.popleft()
+
+        if len(timestamps) >= self.limit:
+            oldest = timestamps[0]
+            retry_after = max(1, int(oldest + self.window_seconds - current_time) + 1)
+            return False, retry_after
+
+        timestamps.append(current_time)
+        return True, 0
+
+    def reset(self):
+        self._records.clear()
+
+
+def parse_rate_limit(env_value: str | None) -> int:
+    if not env_value:
+        return 0
+    try:
+        val = int(env_value.strip())
+        return max(0, val)
+    except ValueError:
+        return 0
+
+
+rate_limiter = RateLimiter(
+    limit_per_minute=parse_rate_limit(os.environ.get("PASTE_RATE_LIMIT_PER_MINUTE")),
+    behind_proxy=os.environ.get("PASTE_BEHIND_PROXY", "").lower() in ("1", "true", "yes"),
+)
+
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_PASTE_BYTES + 8192
@@ -120,6 +183,15 @@ def view_paste(paste_id):
 
 @app.post("/api/pastes")
 def api_create():
+    client_ip = rate_limiter.get_client_ip(request)
+    allowed, retry_after = rate_limiter.is_allowed(client_ip)
+    if not allowed:
+        return (
+            jsonify(error="Rate limit exceeded. Too many pastes created."),
+            429,
+            {"Retry-After": str(retry_after)},
+        )
+
     # JSON is convenient for scripts; raw request bodies work well with curl and stdin.
     if request.is_json:
         try:

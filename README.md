@@ -99,6 +99,9 @@ curl -fsS -X DELETE http://HOST-LAN-IP:8000/api/pastes/PASTE_ID \\
 
 Replace `HOST-LAN-IP` with your host IP (e.g. `192.168.1.50`) and `PASTE_ID` with the returned 12-character ID.
 
+> [!NOTE]
+> Do not upload files containing private keys, credentials, or sensitive secrets to a shared LAN instance.
+
 #### Bash / zsh (curl)
 
 - **Create a paste from a string:**
@@ -123,6 +126,7 @@ Replace `HOST-LAN-IP` with your host IP (e.g. `192.168.1.50`) and `PASTE_ID` wit
   URL=$(printf 'quick link' | curl -fsS http://HOST-LAN-IP:8000/api/pastes --data-binary @- | jq -r .url)
   xdg-open "$URL"  # on macOS: open "$URL"
   ```
+  *Note:* Requires `jq` and a desktop opener (`xdg-open` or `open`) to be installed.
 
 #### PowerShell (Windows / macOS / Linux)
 
@@ -156,7 +160,7 @@ Replace `HOST-LAN-IP` with your host IP (e.g. `192.168.1.50`) and `PASTE_ID` wit
   $paste = Invoke-RestMethod -Uri "http://HOST-LAN-IP:8000/api/pastes/PASTE_ID"
   $paste.content
   ```
-- *Platform note:* In Windows PowerShell 5.1, explicitly specify `-Encoding utf8` on `Get-Content` to avoid ANSI/OEM character conversion on non-ASCII text. PowerShell 7+ defaults to UTF-8 without BOM.
+- *Platform note:* In Windows PowerShell 5.1, explicitly specify `-Encoding utf8` on `Get-Content` to avoid ANSI/OEM character conversion on non-ASCII text, and note that `Invoke-RestMethod` transmits the body using the charset specified in `-ContentType`. PowerShell 7+ defaults to UTF-8 without BOM.
 
 #### Windows Command Prompt (cmd.exe)
 
@@ -169,7 +173,7 @@ Modern Windows 10 and 11 include `curl.exe` out of the box:
     -H "X-Paste-TTL: 24" ^
     --data-binary @config.yaml
   ```
-- **Send text from stdin:**
+- **Send text from stdin (includes trailing newline):**
   ```cmd
   echo hello from cmd| curl.exe -fsS http://HOST-LAN-IP:8000/api/pastes --data-binary @-
   ```
@@ -181,7 +185,7 @@ Modern Windows 10 and 11 include `curl.exe` out of the box:
   ```cmd
   start http://HOST-LAN-IP:8000/p/PASTE_ID
   ```
-- *Platform note:* `cmd.exe` uses `^` for line continuation and double quotes (`"`) for header arguments. Notice there is no space between the text and pipe (`|`) in `echo text|` to prevent trailing whitespace from being appended to the paste content.
+- *Platform note:* `cmd.exe` uses `^` for line continuation and double quotes (`"`) for header arguments. Notice that `echo` in `cmd.exe` always appends a trailing CRLF line terminator to stdin; omitting the space before the pipe (`echo text|`) only avoids inserting an unwanted space character before that newline. To send exact text without a line terminator from Windows, write it to a file or use PowerShell/Bash.
 
 ## Maintenance
 

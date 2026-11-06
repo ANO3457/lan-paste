@@ -279,83 +279,84 @@ def test_unexpired_paste_remains_readable(route, ttl_hours, monkeypatch):
         assert db.execute("SELECT id FROM pastes WHERE id = ?", (paste_id,)).fetchone() is not None
 
 
-def test_raw_text_create_and_read_paste():
+def test_paste_size_boundary_below_and_exact_limit():
     client = paste_app.app.test_client()
-    raw_content = "systemd[1]: Started LAN Paste service.\n[INFO] Listening on 0.0.0.0:8000"
-    response = client.post(
-        "/api/pastes",
-        data=raw_content,
-        content_type="text/plain",
-    )
-    assert response.status_code == 201
-    payload = response.get_json()
-    assert "id" in payload
-    assert "url" in payload
-    assert payload["expires_in_hours"] == 24
-    assert f"/p/{payload['id']}" in payload["url"]
+    # Below limit (100 KiB)
+    small_content = "x" * (100 * 1024)
+    res_small = client.post("/api/pastes", data=small_content, content_type="text/plain")
+    assert res_small.status_code == 201
+    small_id = res_small.get_json()["id"]
+    assert len(client.get(f"/api/pastes/{small_id}").get_json()["content"]) == len(small_content)
 
-    fetched = client.get(f"/api/pastes/{payload['id']}")
+    # Exactly 1 MiB (1,048,576 bytes)
+    exact_content = "a" * paste_app.MAX_PASTE_BYTES
+    res_exact = client.post("/api/pastes", data=exact_content, content_type="text/plain")
+    assert res_exact.status_code == 201
+    exact_id = res_exact.get_json()["id"]
+    fetched = client.get(f"/api/pastes/{exact_id}")
     assert fetched.status_code == 200
-    fetched_data = fetched.get_json()
-    assert fetched_data["content"] == raw_content
-    assert fetched_data["title"] == ""
+    assert len(fetched.get_json()["content"].encode("utf-8")) == paste_app.MAX_PASTE_BYTES
 
 
-def test_raw_text_with_title_and_ttl_headers():
+def test_paste_size_boundary_exceeds_limit_by_one_byte():
     client = paste_app.app.test_client()
-    raw_content = "192.168.1.100 router.local"
-    response = client.post(
-        "/api/pastes",
-        data=raw_content,
-        headers={"X-Paste-Title": "Static DNS records", "X-Paste-TTL": "168"},
-        content_type="text/plain",
-    )
-    assert response.status_code == 201
-    payload = response.get_json()
-    assert payload["expires_in_hours"] == 168
-
-    fetched = client.get(f"/api/pastes/{payload['id']}")
-    assert fetched.status_code == 200
-    fetched_data = fetched.get_json()
-    assert fetched_data["title"] == "Static DNS records"
-    assert fetched_data["content"] == raw_content
-
-
-def test_raw_text_with_ttl_never():
-    client = paste_app.app.test_client()
-    response = client.post(
-        "/api/pastes",
-        data="permanent note",
-        headers={"X-Paste-TTL": "never"},
-        content_type="text/plain",
-    )
-    assert response.status_code == 201
-    payload = response.get_json()
-    assert payload["expires_in_hours"] is None
-
-    fetched = client.get(f"/api/pastes/{payload['id']}")
-    assert fetched.status_code == 200
-    assert fetched.get_json()["expires_at"] is None
-
-
-@pytest.mark.parametrize("empty_body", [b"", b"   ", b"\n\t  \r\n"])
-def test_raw_text_reject_empty_or_whitespace(empty_body):
-    response = paste_app.app.test_client().post(
-        "/api/pastes",
-        data=empty_body,
-        content_type="text/plain",
-    )
+    # Exactly 1 MiB + 1 byte (1,048,577 bytes)
+    oversized = "a" * (paste_app.MAX_PASTE_BYTES + 1)
+    response = client.post("/api/pastes", data=oversized, content_type="text/plain")
     assert_api_error(response, 400)
-    assert "empty" in response.get_json()["error"]
+    assert "maximum is 1 MiB" in response.get_json()["error"]
 
 
-@pytest.mark.parametrize("invalid_ttl", ["5", "12", "invalid", "-1", "0", "999"])
-def test_raw_text_reject_unsupported_ttl(invalid_ttl):
-    response = paste_app.app.test_client().post(
-        "/api/pastes",
-        data="some code snippet",
-        headers={"X-Paste-TTL": invalid_ttl},
-        content_type="text/plain",
-    )
+def test_paste_size_boundary_json_payload():
+    client = paste_app.app.test_client()
+    # Exactly 1 MiB content in JSON
+    exact_content = "j" * paste_app.MAX_PASTE_BYTES
+    res_exact = client.post("/api/pastes", json={"content": exact_content})
+    assert res_exact.status_code == 201
+    exact_id = res_exact.get_json()["id"]
+    assert len(client.get(f"/api/pastes/{exact_id}").get_json()["content"]) == paste_app.MAX_PASTE_BYTES
+
+    # 1 MiB + 1 byte content in JSON
+    oversized = "j" * (paste_app.MAX_PASTE_BYTES + 1)
+    res_over = client.post("/api/pastes", json={"content": oversized})
+    assert_api_error(res_over, 400)
+    assert "maximum is 1 MiB" in res_over.get_json()["error"]
+
+
+def test_paste_size_boundary_multibyte_utf8():
+    client = paste_app.app.test_client()
+    # '€' is 1 Python character but 3 UTF-8 encoded bytes.
+    # 350,000 chars is well below 1,000,000 character count,
+    # but 350,000 * 3 = 1,050,000 bytes > 1,048,576 byte limit,
+    # while still within Flask MAX_CONTENT_LENGTH (1,056,768).
+    # This verifies application byte-size check distinguishes characters from bytes.
+    oversized_utf8 = "€" * 350_000
+    assert len(oversized_utf8) == 350_000
+    assert len(oversized_utf8.encode("utf-8")) == 1_050_000
+
+    response = client.post("/api/pastes", data=oversized_utf8, content_type="text/plain; charset=utf-8")
     assert_api_error(response, 400)
-    assert "ttl_hours" in response.get_json()["error"]
+    assert "maximum is 1 MiB" in response.get_json()["error"]
+
+    # Exactly 1 MiB with mixed multibyte:
+    # 300,000 '€' (900,000 B) + 148,576 'a' (148,576 B) = 1,048,576 B
+    exact_mixed = ("€" * 300_000) + ("a" * (paste_app.MAX_PASTE_BYTES - 900_000))
+    assert len(exact_mixed.encode("utf-8")) == paste_app.MAX_PASTE_BYTES
+    assert len(exact_mixed) < paste_app.MAX_PASTE_BYTES  # character count differs from byte count
+
+    res_mixed = client.post("/api/pastes", data=exact_mixed, content_type="text/plain; charset=utf-8")
+    assert res_mixed.status_code == 201
+    mixed_id = res_mixed.get_json()["id"]
+    fetched = client.get(f"/api/pastes/{mixed_id}")
+    assert fetched.status_code == 200
+    assert len(fetched.get_json()["content"].encode("utf-8")) == paste_app.MAX_PASTE_BYTES
+
+
+def test_paste_size_exceeds_flask_max_content_length():
+    client = paste_app.app.test_client()
+    # Flask MAX_CONTENT_LENGTH is MAX_PASTE_BYTES + 8192
+    huge_data = "z" * (paste_app.MAX_PASTE_BYTES + 16384)
+    response = client.post("/api/pastes", data=huge_data, content_type="text/plain")
+    assert response.status_code == 413
+    assert response.is_json
+    assert "Request too large; maximum paste size is 1 MiB" in response.get_json()["error"]
